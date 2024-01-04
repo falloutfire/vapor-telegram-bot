@@ -22,7 +22,10 @@ public func configure(_ app: Application) async throws {
 
     // register routes
     let tgApi: String = Environment.get("TELEGRAM_BOT_TOKEN") ?? ""
-        /// set level of debug if you needed
+    /// set level of debug if you needed
+    if app.environment == .development {
+       app.logger.logLevel = .debug
+    }
     TGBot.log.logLevel = app.logger.logLevel
     let bot: TGBot = .init(app: app, botId: tgApi)
     await TGBOT.setConnection(try await TGLongPollingConnection(bot: bot))
@@ -35,10 +38,6 @@ public func configure(_ app: Application) async throws {
 
     if let port = Environment.get("PORT").flatMap(Int.init) {
        app.http.server.configuration.port = port
-    }
-
-    if app.environment == .development {
-       app.logger.logLevel = .debug
     }
 
     try await app.autoMigrate().get()
