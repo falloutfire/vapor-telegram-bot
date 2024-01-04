@@ -19,24 +19,6 @@ final class RegisterUserBotHandlers {
         await commandPlayerUsersHandler(app: app, connection: connection)
         await commandPlayGameUserHandler(app: app, connection: connection)
     }
-    
-//    func getAllEmployees(_ req: Request) async throws -> [Person] {
-//      // 1
-//      let employees = try await Person
-//        .query(on: req.db)
-//         // 2
-//        // .join(parent: \.$company, method: .inner)
-//        .join(parent: \.$company, method: .inner)
-//        .all()
-//
-//      // 3
-//      for employee in employees {
-//        employee.$company.value = try employee.joined(Company.self)
-//      }
-//
-//      // 4
-//      return employees
-//    }
 
     private static func commandRegisterUserHandler(app: Vapor.Application, connection: TGConnectionPrtcl) async {
         await connection.dispatcher.add(TGCommandHandler(commands: ["/register"]) { 
@@ -47,21 +29,18 @@ final class RegisterUserBotHandlers {
             let stringUserId = String(userId)
 
             let chatModel: ChatModel
-            let models = try await ChatModel.query(on: app.db).filter(\.$tgIdentifier == stringChatId).all()
-            if let value = models.first {
-                chatModel = value
+            if let model = try await ChatModel.query(on: app.db).filter(\.$tgIdentifier == stringChatId).first() {
+                chatModel = model
             } else {
                 chatModel = try await createChat(app: app, chatId: stringChatId)
             }
             
-            let savedUser = try await createChatUser(app: app, chat: chatModel, userId: stringUserId)
-
-            let members = await getMembersFromDb(app: app, bot: bot, chatId: chatId)
-            let text = await getStringListMembers(members: members, prefixText: "Вы успешно зарегестрированы!\n")
+            let savedUser = try await getChatUser(app: app, chat: chatModel, userId: stringUserId)
+            let members = try await getMembersFromDb(app: app, bot: bot, chatId: chatId)
+            let text = await getStringListMembers(members: members, prefixText: "Вы успешно зарегестрированы!\n\n")
 
             let params: TGSendMessageParams = .init(chatId: .chat(chatId), text: text)
-            // try await bot.sendMessage(params: params)
-            try await update.message?.reply(text: text, bot: bot)
+            try await bot.sendMessage(params: params)
         })
     }
     
@@ -76,8 +55,23 @@ final class RegisterUserBotHandlers {
         return try await model.save(on: app.db).map { model }.get()
     }
 
-    static func getAllChatUsers(app: Vapor.Application) async throws -> [ChatUserModel] {
-        try await ChatUserModel.query(on: app.db).all()
+    static func getChatUser(app: Vapor.Application, chat: ChatModel, userId: String) async throws -> ChatUserModel {
+        let chatUserModel = try await ChatUserModel.query(on: app.db)
+            .group(.and) { q in
+                q.filter(\.$tgIdentifier == userId)
+                q.filter(\.$chat.$id == chat.id ?? UUID())
+            }
+            .first()
+
+        if let chatUserModel = chatUserModel {
+            return chatUserModel
+        } else {
+            return try await createChatUser(app: app, chat: chat, userId: userId)
+        }
+    }
+
+    static func getAllChatUsers(app: Vapor.Application, chat: ChatModel) async throws -> [ChatUserModel] {
+        try await ChatUserModel.query(on: app.db).filter(\.$chat.$id == chat.requireID()).all()
     }
 
     private static func commandPlayerUsersHandler(app: Vapor.Application, connection: TGConnectionPrtcl) async {
@@ -85,12 +79,11 @@ final class RegisterUserBotHandlers {
             update, bot in
             guard let chatId = update.message?.chat.id else { fatalError("chat id not found") }
 
-            let members = await getMembers(bot: bot, chatId: chatId)
+            let members = try await getMembersFromDb(app: app, bot: bot, chatId: chatId)
             let text = await getStringListMembers(members: members)
 
             let params: TGSendMessageParams = .init(chatId: .chat(chatId), text: text)
             try await bot.sendMessage(params: params)
-            // try await update.message?.reply(text: "pong", bot: bot)
         })
     }
 
@@ -99,41 +92,35 @@ final class RegisterUserBotHandlers {
             update, bot in
             guard let chatId = update.message?.chat.id else { fatalError("chat id not found") }
 
-            let members = await getMembersFromDb(app: app, bot: bot, chatId: chatId)
+            let members = try await getMembersFromDb(app: app, bot: bot, chatId: chatId)
             guard let randomMember = members.shuffled().first else { return }
-            let name = randomMember.user.username ?? randomMember.user.firstName + (randomMember.user.lastName ?? "")
+            var name: String
+            if let username = randomMember.user.username {
+                name = "@\(username)"
+            } else {
+                name = "\(randomMember.user.firstName + (randomMember.user.lastName ?? ""))"
+            }
             let text = "И пупсик этого дня - @\(name)"
 
             let params: TGSendMessageParams = .init(chatId: .chat(chatId), text: text)
             try await bot.sendMessage(params: params)
-            // try await update.message?.reply(text: "pong", bot: bot)
         })
     }
 
-    private static func getMembersFromDb(app: Vapor.Application, bot: TGBot, chatId: Int64) async -> [TGChatMember] {
+    private static func getMembersFromDb(
+        app: Vapor.Application,
+        bot: TGBot,
+        chatId: Int64
+    ) async throws -> [TGChatMember] {
         var members: [TGChatMember] = []
         let stringChatId = String(chatId)
-        
-        let users = try? await getAllChatUsers(app: app)
-        
-        for i in (users ?? []) {
-            if let id = Int64(i.tgIdentifier) {
-                let chatMemberParam = TGGetChatMemberParams(chatId: .chat(chatId), userId: id)
-
-                if let safeMember = try? await bot.getChatMember(params: chatMemberParam) { members.append(safeMember) }
-            }
-        }
-        return members
-    }
-
-    private static func getMembers(bot: TGBot, chatId: Int64) async -> [TGChatMember] {
-        var members: [TGChatMember] = []
-        let stringChatId = String(chatId)
-        for i in (self.registerUserInChats[stringChatId] ?? []) {
-            if let index = Int64(i) { 
-                let chatMemberParam = TGGetChatMemberParams(chatId: .chat(chatId), userId: index)
-
-                if let safeMember = try? await bot.getChatMember(params: chatMemberParam) { members.append(safeMember)
+        if let chatModel = try await ChatModel.query(on: app.db).filter(\.$tgIdentifier == stringChatId).first() {
+            let users = try await getAllChatUsers(app: app, chat: chatModel)
+            
+            for i in users {
+                if let id = Int64(i.tgIdentifier) {
+                    let chatMemberParam = TGGetChatMemberParams(chatId: .chat(chatId), userId: id)
+                    if let safeMember = try? await bot.getChatMember(params: chatMemberParam) { members.append(safeMember) }
                 }
             }
         }

@@ -13,6 +13,7 @@ struct CreateChatUsers: Migration {
             .id()
             .field("tgIdentifier", .string, .required)
             .field("chatID", .uuid, .required, .references("chats", "id"))
+            .unique(on: "tgIdentifier", "chatID")
             .create()
     }
 
