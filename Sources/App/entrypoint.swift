@@ -1,5 +1,8 @@
 import Vapor
 import Logging
+import TelegramVaporBot
+
+let TGBOT: TGBotConnection = .init()
 
 @main
 enum Entrypoint {
@@ -8,6 +11,7 @@ enum Entrypoint {
         try LoggingSystem.bootstrap(from: &env)
         
         let app = Application(env)
+        app.logger.logLevel = .debug
         defer { app.shutdown() }
         
         do {
