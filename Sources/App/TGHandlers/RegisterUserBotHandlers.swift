@@ -23,18 +23,24 @@ final class RegisterUserBotHandlers {
     private static func commandRegisterUserHandler(app: Vapor.Application, connection: TGConnectionPrtcl) async {
         await connection.dispatcher.add(TGCommandHandler(commands: ["/register"]) { 
             update, bot in
-            guard let userId = update.message?.from?.id else { return }
-            guard let chatId = update.message?.chat.id else { fatalError("chat id not found") }
+            guard let userId = update.message?.from?.id else {
+                app.logger.info("Cannot get userId")
+                return
+            }
+            guard let chatId = update.message?.chat.id else {
+                app.logger.info("Cannot get chatId")
+                return
+            }
             let stringChatId = String(chatId)
             let stringUserId = String(userId)
 
             guard let chatModel = try? await getChatOrCreateChat(app: app, chatId: stringChatId) else {
-                app.logger.trace("Cannot get or save chat")
+                app.logger.info("Cannot get or save chat")
                 return
             }
             
             guard let savedUser = try? await getChatOrCreateUser(app: app, chat: chatModel, userId: stringUserId) else {
-                app.logger.trace("Cannot get or save user")
+                app.logger.info("Cannot get or save user")
                 return
             }
             let members = try await getMembersFromDb(app: app, bot: bot, chatId: chatId)

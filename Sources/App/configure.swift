@@ -7,8 +7,10 @@ import FluentPostgresDriver
 // configures your application
 public func configure(_ app: Application) async throws {
     // uncomment to serve files from /Public folder
+    #if os(macOS)
     app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory))
-    app.middleware.use(app.sessions.middleware)
+    #endif
+    // app.middleware.use(app.sessions.middleware)
     
     if let dbURLString = Environment.get("DATABASE_URL"),
     let url = URL(string: dbURLString) {
@@ -30,7 +32,7 @@ public func configure(_ app: Application) async throws {
     let bot: TGBot = .init(app: app, botId: tgApi)
     await TGBOT.setConnection(try await TGLongPollingConnection(bot: bot))
     // await TGBOT.setConnection(try await TGWebHookConnection(bot: bot, webHookURL: "https://127.0.0.1:8080/telegramWebHook"))
-    // await DefaultBotHandlers.addHandlers(app: app, connection: TGBOT.connection)
+    await DefaultBotHandlers.addHandlers(app: app, connection: TGBOT.connection)
     await RegisterUserBotHandlers.addHandlers(app: app, connection: TGBOT.connection)
     try await TGBOT.connection.start()
     
